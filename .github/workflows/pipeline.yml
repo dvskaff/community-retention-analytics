@@ -1,0 +1,80 @@
+name: Build analysis
+
+# Downloads the newest Stack Exchange dump, rebuilds the dbt models and statistics, and republishes the site.
+# Dumps come out every few months, so a monthly check is enough.
+on:
+  schedule:
+    - cron: "41 9 3 * *" # 09:41 UTC on the 3rd of every month
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write # commit the README results
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pipeline
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      DBT_SEND_ANONYMOUS_USAGE_STATS: "false"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Test before touching real data
+        run: pytest -q
+
+      # The dump archive is large; keep it between runs and only re-download when its checksum changes.
+      - name: Restore downloaded dump
+        uses: actions/cache@v4
+        with:
+          path: data/archives
+          key: se-dump-${{ github.run_id }}
+          restore-keys: se-dump-
+
+      - name: Download dump, load, transform, test, analyze, build site
+        run: python -m commret.pipeline
+        env:
+          PYTHONPATH: src
+
+      - name: Commit README results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          if ! git diff --staged --quiet; then
+            git commit -m "Update results: dump $(python -c 'import json;print(json.load(open("site/results.json"))["dump_id"])')"
+            git pull --rebase
+            git push
+          fi
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
