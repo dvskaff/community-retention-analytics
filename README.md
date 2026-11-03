@@ -22,7 +22,21 @@ community, built from its public data dump. It answers the questions a product t
 Rewritten automatically after every run.
 
 <!-- RESULTS:START -->
-_Results appear here after the first run of the **Build analysis** workflow._
+_Stack Exchange dump `stackexchange_20240402` · Cross Validated activity through Mar 31, 2024 · 1,223,160 contributions by 113,497 people_
+
+| Metric | Value |
+|---|---|
+| Active contributors, last 12 months | 11,342 |
+| Questions, last 12 months | 18,827 (-27% vs. prior 12 months; peak was 2,272 in Mar 2017) |
+| Newcomers who came back within 30 days | 29.1% of 7,071 |
+| Questions answered within 7 days | 30.1% (median first answer after 3 h) |
+| Share of answers written by the top 10% of answerers | 76% |
+
+**Aha moment:** newcomers whose first question was answered within 24 hours came back 39.9% of the time vs. 34.1% otherwise (+5.8 pts, 95% CI +4.4 to +7.2; n = 18,192).
+
+**Cox model:** adjusting for the other first-week signals, a fast first answer is associated with coming back 1.21× as fast (95% CI 1.16–1.27).
+
+**Latest run:** 19 dbt models, 60 data tests and 3 unit tests: 63 passed, 0 warnings, 0 failed · 2026-11-03 12:31 UTC
 <!-- RESULTS:END -->
 
 ## How it works
