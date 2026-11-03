@@ -89,12 +89,13 @@ def find_dump(cfg: Config, http: requests.Session | None = None) -> list[DumpFil
         except Exception as exc:
             log.warning("Could not read archive item %s: %s", item, exc)
             continue
-        if files:
-            log.info("Using dump %s: %s", item, ", ".join(f["name"] for f in files))
-            return [
-                DumpFile(item, f["name"], int(f["size"]) if f.get("size") else None, f.get("md5"))
-                for f in files
-            ]
+        if not files:
+            log.info("Archive item %s has no %s archive; trying an older dump", item, cfg.site)
+            continue
+        log.info("Using dump %s: %s", item, ", ".join(f["name"] for f in files))
+        return [
+            DumpFile(item, f["name"], int(f["size"]) if f.get("size") else None, f.get("md5")) for f in files
+        ]
     raise RuntimeError(f"No Stack Exchange dump containing {cfg.site} was found on the Internet Archive.")
 
 

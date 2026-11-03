@@ -89,3 +89,22 @@ def test_cox_recovers_a_known_effect():
     table, info = analysis.cox_model(analysis.survival_data(sd))
     hr = table.set_index("covariate").loc["Answered within 24 h"]
     assert hr["lo"] < 2 < hr["hi"] and info["events"] > 1000
+
+
+@pytest.mark.parametrize(
+    ("encoding", "bom"),
+    [("utf-8", b""), ("utf-8", b"\xef\xbb\xbf"), ("utf-16-le", b"\xff\xfe"), ("utf-16-be", b"\xfe\xff")],
+)
+def test_parser_trusts_the_bytes_not_the_xml_declaration(tmp_path, encoding, bom):
+    # Real dumps have shipped files whose byte-order mark contradicts the declared encoding.
+    text = (
+        '<?xml version="1.0" encoding="utf-8"?>\n<users>\n'
+        '  <row Id="1" CreationDate="2020-01-01T00:00:00.000" Reputation="5" />\n'
+        '  <row Id="2" CreationDate="2021-05-05T10:00:00.000" Reputation="1" AccountId="é" />\n</users>\n'
+    )
+    path = tmp_path / "Users.xml"
+    path.write_bytes(bom + text.encode(encoding))
+    out = tmp_path / "users.parquet"
+    assert parse.xml_to_parquet(path, "Users", out) == 2
+    table = duckdb.sql(f"select Id, Reputation, AccountId from read_parquet('{out}') order by Id").fetchall()
+    assert table == [("1", "5", None), ("2", "1", "é")]
