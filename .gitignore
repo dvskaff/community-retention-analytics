@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+site/
+data/
+*.duckdb
+*.duckdb.wal
+*.7z
+dbt/target/
+dbt/logs/
+logs/
+.user.yml
+.pytest_cache/
+.ruff_cache/
+.DS_Store
