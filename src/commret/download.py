@@ -85,12 +85,20 @@ def find_dump(cfg: Config, http: requests.Session | None = None) -> list[DumpFil
         try:
             r = http.get(f"{ARCHIVE}/metadata/{item}", timeout=60)
             r.raise_for_status()
-            files = site_files(r.json().get("files", []), cfg.site)
+            all_files = r.json().get("files", [])
+            files = site_files(all_files, cfg.site)
         except Exception as exc:
             log.warning("Could not read archive item %s: %s", item, exc)
             continue
         if not files:
-            log.info("Archive item %s has no %s archive; trying an older dump", item, cfg.site)
+            label = cfg.site.split(".")[0]
+            similar = [f["name"] for f in all_files if f.get("name", "").startswith(label + ".")][:5]
+            log.info(
+                "Archive item %s has no %s archive%s; trying an older dump",
+                item,
+                cfg.site,
+                f" (similar files: {similar})" if similar else "",
+            )
             continue
         log.info("Using dump %s: %s", item, ", ".join(f["name"] for f in files))
         return [

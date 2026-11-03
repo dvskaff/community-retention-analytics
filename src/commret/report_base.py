@@ -165,11 +165,14 @@ def health_section(art: dict, data: dict) -> str:
     fr = art["freshness"]
     if fr:
         age_d = (fr.get("max_loaded_at_time_ago_in_s") or 0) / 86400
-        cls = {"pass": "good", "warn": "warn"}.get(fr["status"], "bad")
-        fresh = (
-            f"<span class='chip {cls}'>{fr['status'].upper()}</span> newest post in the dump is "
-            f"{age_d:.0f} days old (dumps are published every few months; warn after 200 days, error after 400)"
-        )
+        if fr["status"] == "pass":
+            fresh = f"<span class='chip good'>CURRENT</span> newest post in the dump is {age_d:.0f} days old"
+        else:
+            fresh = (
+                f"<span class='chip warn'>OLDER DUMP</span> newest post in the dump is {age_d:.0f} days old. "
+                "The pipeline checks the Internet Archive monthly and uses the newest dump that includes this site; "
+                "newer dumps there do not include it yet."
+            )
     else:
         fresh = "<span class='chip warn'>not checked</span>"
     d = data["dump"].iloc[0]

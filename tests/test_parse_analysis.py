@@ -108,3 +108,32 @@ def test_parser_trusts_the_bytes_not_the_xml_declaration(tmp_path, encoding, bom
     assert parse.xml_to_parquet(path, "Users", out) == 2
     table = duckdb.sql(f"select Id, Reputation, AccountId from read_parquet('{out}') order by Id").fetchall()
     assert table == [("1", "5", None), ("2", "1", "é")]
+
+
+def test_parser_survives_characters_xml_forbids(tmp_path):
+    # Real posts contain control characters, sometimes as references (&#x1;) and sometimes raw. One of them
+    # used to make the whole Posts file unreadable. Valid references (&#233; = é) must be kept.
+    text = (
+        '<?xml version="1.0" encoding="utf-8"?>\n<posts>\n'
+        '  <row Id="1" PostTypeId="1" CreationDate="2020-01-01T00:00:00.000" Tags="|a&#x1;b|" />\n'
+        '  <row Id="2" PostTypeId="2" CreationDate="2020-01-02T00:00:00.000" Tags="caf&#233;\x07" />\n'
+        '  <row Id="3" PostTypeId="1" CreationDate="2020-01-03T00:00:00.000" Tags="&#55357;x" />\n</posts>\n'
+    )
+    path = tmp_path / "Posts.xml"
+    path.write_text(text, encoding="utf-8")
+    out = tmp_path / "posts.parquet"
+    assert parse.xml_to_parquet(path, "Posts", out) == 3
+    tags = [r[0] for r in duckdb.sql(f"select Tags from read_parquet('{out}') order by Id").fetchall()]
+    assert tags == ["|a b|", "café ", " x"]
+
+
+def test_character_reference_split_across_chunks_is_kept_whole(tmp_path):
+    body = "".join(
+        f'  <row Id="{i}" CreationDate="2020-01-01T00:00:00.000" Reputation="caf&#233;" />\n'
+        for i in range(200)
+    )
+    path = tmp_path / "Users.xml"
+    path.write_text(f'<?xml version="1.0" encoding="utf-8"?>\n<users>\n{body}</users>\n', encoding="utf-8")
+    # A tiny chunk size forces references to straddle chunk boundaries many times.
+    rows = [e.get("Reputation") for e in parse.iter_rows(path, chunk_chars=37)]
+    assert len(rows) == 200 and set(rows) == {"café"}

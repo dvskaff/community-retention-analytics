@@ -8,6 +8,9 @@ first_answer as (
     from {{ ref('stg_se__posts') }} as a
     join questions as q on q.post_id = a.parent_question_id
     where a.post_type = 'answer' and a.owner_user_id is distinct from q.owner_user_id
+      -- Answers moved in from merged duplicate questions keep their older timestamps; they cannot be the
+      -- response to this question, so only answers posted after the question count.
+      and a.created_at >= q.created_at
     group by 1
 ),
 
@@ -15,7 +18,7 @@ first_comment as (
     select c.post_id, min(c.created_at) as first_comment_at
     from {{ ref('stg_se__comments') }} as c
     join questions as q using (post_id)
-    where c.user_id is distinct from q.owner_user_id
+    where c.user_id is distinct from q.owner_user_id and c.created_at >= q.created_at
     group by 1
 )
 

@@ -57,24 +57,62 @@ def sniff_encoding(path: Path) -> str:
 
 
 DECLARATION = re.compile(r"^\s*<\?xml[^>]*\?>")
+# Characters XML 1.0 forbids: most ASCII control codes, lone surrogates, U+FFFE/U+FFFF.
+_BAD_CODEPOINT = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
+_CHAR_REF = re.compile(r"&#(x[0-9a-fA-F]+|[0-9]+);")
+
+
+def _valid_ref(m: re.Match) -> str:
+    """Keep a numeric character reference only if it points at a character XML allows."""
+    code = int(m.group(1)[1:], 16) if m.group(1)[0] in "xX" else int(m.group(1))
+    ok = (
+        code in (0x9, 0xA, 0xD)
+        or 0x20 <= code <= 0xD7FF
+        or 0xE000 <= code <= 0xFFFD
+        or 0x10000 <= code <= 0x10FFFF
+    )
+    return m.group(0) if ok else " "
+
+
+def clean(text: str) -> str:
+    """Remove characters (raw or written as &#...; references) that XML 1.0 forbids. User-generated posts
+    occasionally contain control characters pasted from other software, and one bad character would otherwise
+    make the whole multi-GB file unreadable."""
+    return _CHAR_REF.sub(_valid_ref, _BAD_CODEPOINT.sub(" ", text))
 
 
 def iter_rows(path: Path, chunk_chars: int = 1 << 20):
-    """Yield each <row .../> element, decoding the file ourselves and feeding text to a pull parser."""
+    """Yield each <row .../> element, decoding the file ourselves and feeding cleaned text to a pull parser."""
     parser = ET.XMLPullParser(events=("start", "end"))
-    root, first = None, True
+    root, first, carry = None, True, ""
     with path.open("r", encoding=sniff_encoding(path), errors="replace", newline="") as fh:
-        while chunk := fh.read(chunk_chars):
+        while True:
+            chunk = fh.read(chunk_chars)
+            text = carry + chunk
+            if not chunk and not text:
+                break
             if first:
-                chunk, first = DECLARATION.sub("", chunk, count=1), False
-            parser.feed(chunk)
+                text, first = DECLARATION.sub("", text, count=1), False
+            # Never split a character reference across two chunks: hold back a trailing "&..." fragment.
+            amp = text.rfind("&")
+            if chunk and amp != -1 and ";" not in text[amp:] and len(text) - amp < 16:
+                text, carry = text[:amp], text[amp:]
+            else:
+                carry = ""
+            parser.feed(clean(text))
             for event, elem in parser.read_events():
                 if root is None:
                     root = elem  # the first start event is the document's root element
                 if event == "end" and elem.tag == "row":
                     yield elem
                     root.clear()  # drop parsed rows so memory stays flat even for multi-GB files
+            if not chunk:
+                break
     parser.close()
+    # Newer expat versions may hold back the last tokens until the parser is closed; emit those rows too.
+    for event, elem in parser.read_events():
+        if event == "end" and elem.tag == "row":
+            yield elem
 
 
 def xml_to_parquet(xml_path: Path, table: str, out: Path) -> int:
