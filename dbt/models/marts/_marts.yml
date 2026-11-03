@@ -1,0 +1,159 @@
+version: 2
+
+models:
+  - name: dim_users
+    description: >
+      One row per registered user: when they signed up, their first contribution, whether they activated (first
+      contribution within 30 days of signup), whether they came back (another contribution on a later day within
+      30 days of the first), and what their first experience looked like.
+    config:
+      contract: {enforced: true}
+    columns:
+      - {name: user_id, data_type: integer, constraints: [{type: not_null}], data_tests: [unique, not_null]}
+      - {name: signed_up_at, data_type: timestamp}
+      - {name: signup_month, data_type: date}
+      - {name: first_contribution_at, data_type: timestamp}
+      - {name: first_contribution_month, data_type: date}
+      - name: first_contribution_type
+        data_type: varchar
+        data_tests: [{accepted_values: {arguments: {values: [question, answer, comment]}}}]
+      - name: days_signup_to_first
+        data_type: double
+        description: Can be slightly negative when the dump records a post a few seconds before the account.
+      - {name: is_contributor, data_type: boolean}
+      - {name: activated, data_type: boolean}
+      - {name: next_visit_at, data_type: timestamp}
+      - {name: days_to_next_visit, data_type: double, data_tests: [not_negative]}
+      - {name: came_back, data_type: boolean}
+      - {name: follow_up_days, data_type: double}
+      - {name: contributions, data_type: bigint, data_tests: [not_negative]}
+      - {name: active_days, data_type: bigint}
+      - {name: active_months, data_type: bigint}
+      - {name: last_contribution_at, data_type: timestamp}
+      - {name: first_q_answered_fast, data_type: boolean, description: First question answered by another user within 24 hours.}
+      - {name: first_q_commented_fast, data_type: boolean}
+      - {name: first_q_upvoted_early, data_type: boolean}
+      - {name: first_q_downvoted_early, data_type: boolean}
+      - {name: first_q_closed_7d, data_type: boolean}
+      - {name: first_a_upvoted_early, data_type: boolean}
+      - {name: first_a_accepted, data_type: boolean}
+    data_tests:
+      - expression_is_true:
+          arguments: {expression: "not came_back or is_contributor"}
+      - expression_is_true:
+          arguments: {expression: "not activated or is_contributor"}
+
+  - name: fct_contributions
+    description: One row per question, answer or comment by a registered user.
+    config:
+      contract: {enforced: true}
+    columns:
+      - {name: contribution_key, data_type: varchar, constraints: [{type: not_null}], data_tests: [unique, not_null]}
+      - name: user_id
+        data_type: integer
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_users'), field: user_id}
+              config: {severity: warn}
+      - {name: contribution_type, data_type: varchar}
+      - {name: post_id, data_type: integer}
+      - {name: question_id, data_type: integer}
+      - {name: created_at, data_type: timestamp}
+      - {name: created_date, data_type: date}
+      - {name: created_month, data_type: date}
+
+  - name: fct_questions
+    description: One row per question with the community's response (time to first answer, votes, closure).
+    columns:
+      - {name: question_id, data_tests: [unique, not_null]}
+
+  - name: mart_monthly_activity
+    description: Monthly volume and growth accounting (new, retained, resurrected, churned contributors).
+    columns:
+      - {name: month, data_tests: [unique, not_null]}
+      - {name: churned, data_tests: [not_negative]}
+
+  - name: mart_cohort_retention
+    description: Monthly cohorts of new contributors and the share active N months later (0-24).
+    data_tests:
+      - unique_combination: {arguments: {combination_of_columns: [cohort_month, months_since_first]}}
+    columns:
+      - name: retention_rate
+        data_tests: [{between: {arguments: {min_value: 0, max_value: 1}}}]
+
+  - name: mart_activation_funnel
+    description: Signup-to-retained funnel by signup year.
+    columns:
+      - {name: signup_year, data_tests: [unique, not_null]}
+    data_tests:
+      - expression_is_true: {arguments: {expression: "signups >= activated and activated >= came_back"}}
+
+  - name: mart_first_experience
+    description: Share of recent newcomers who came back, split by first-experience signals.
+    data_tests:
+      - unique_combination: {arguments: {combination_of_columns: [signal, first_contribution_type, has_signal]}}
+    columns:
+      - name: came_back_rate
+        data_tests: [{between: {arguments: {min_value: 0, max_value: 1}}}]
+
+  - name: mart_weekly_answers
+    description: North-star metric. Questions per week answered by another user within 7 days.
+    columns:
+      - {name: week_start, data_tests: [unique, not_null]}
+
+  - name: mart_answer_concentration
+    description: Answerers in the last 12 months, ranked, with cumulative share of all answers (a Lorenz curve).
+    columns:
+      - {name: user_id, data_tests: [unique, not_null]}
+
+  - name: mart_kpi_summary
+    description: One row of headline KPIs.
+    data_tests:
+      - expression_is_true: {arguments: {expression: "contributors_all_time <= registered_users"}}
+
+exposures:
+  - name: community_retention_dashboard
+    label: Community retention dashboard
+    type: dashboard
+    maturity: high
+    url: https://dvskaff.github.io/community-retention-analytics/
+    description: Public dashboard built from these marts by src/commret/report.py.
+    depends_on:
+      - ref('mart_kpi_summary')
+      - ref('mart_monthly_activity')
+      - ref('mart_cohort_retention')
+      - ref('mart_activation_funnel')
+      - ref('mart_first_experience')
+      - ref('mart_weekly_answers')
+      - ref('mart_answer_concentration')
+      - ref('dim_users')
+    owner:
+      name: David Skaff
+
+unit_tests:
+  - name: growth_accounting_classifies_every_active_user
+    description: >
+      User 1 is new in Jan and retained in Feb; user 2 is new in Jan, absent in Feb (churned) and resurrected in Mar.
+    model: mart_monthly_activity
+    given:
+      - input: ref('fct_contributions')
+        rows:
+          - {user_id: 1, created_month: "2024-01-01", contribution_type: question}
+          - {user_id: 1, created_month: "2024-02-01", contribution_type: answer}
+          - {user_id: 2, created_month: "2024-01-01", contribution_type: comment}
+          - {user_id: 2, created_month: "2024-03-01", contribution_type: answer}
+      - input: ref('dim_users')
+        rows:
+          - {user_id: 1, signup_month: "2024-01-01"}
+          - {user_id: 2, signup_month: "2024-01-01"}
+      - input: ref('int_dump_window')
+        format: sql
+        rows: |
+          select timestamp '2024-01-03' as data_start, timestamp '2024-04-15' as data_end, date '2024-04-01' as last_month
+    expect:
+      rows:
+        - {month: "2024-01-01", active_contributors: 2, new_contributors: 2, retained: 0, resurrected: 0, churned: 0}
+        - {month: "2024-02-01", active_contributors: 1, new_contributors: 0, retained: 1, resurrected: 0, churned: 1}
+        - {month: "2024-03-01", active_contributors: 1, new_contributors: 0, retained: 0, resurrected: 1, churned: 1}
+        - {month: "2024-04-01", active_contributors: 0, new_contributors: 0, retained: 0, resurrected: 0, churned: 1}

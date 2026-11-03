@@ -1,0 +1,30 @@
+version: 2
+
+sources:
+  - name: stackexchange
+    description: >
+      Stack Exchange data dump for Cross Validated (stats.stackexchange.com), downloaded from the Internet Archive and
+      loaded by src/commret/parse.py. All columns are text exactly as published; free text (post bodies, comments,
+      bios) is not loaded. Licensed CC BY-SA by Stack Exchange, Inc.
+    schema: raw
+    tables:
+      - name: users
+        columns:
+          - {name: Id, data_tests: [unique, not_null]}
+      - name: posts
+        # Dumps are published every few months, so freshness thresholds are in months, not days.
+        loaded_at_field: "try_cast(CreationDate as timestamp)"
+        config:
+          freshness:
+            warn_after: {count: 200, period: day}
+            error_after: {count: 400, period: day}
+        columns:
+          - {name: Id, data_tests: [unique, not_null]}
+      - name: comments
+        columns:
+          - {name: Id, data_tests: [unique, not_null]}
+      - name: votes
+        columns:
+          - {name: Id, data_tests: [unique, not_null]}
+      - name: dump_info
+        description: Which archive item was loaded and when.

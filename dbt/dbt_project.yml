@@ -1,0 +1,38 @@
+name: community_retention
+version: "1.0.0"
+config-version: 2
+profile: community_retention
+
+model-paths: ["models"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+seed-paths: ["seeds"]
+target-path: "target"
+clean-targets: ["target", "logs"]
+
+flags:
+  send_anonymous_usage_stats: false
+
+vars:
+  # A newcomer "came back" if they contributed again within this many days after their first contribution day.
+  return_window_days: 30
+  # A signup is "activated" if the first contribution happens within this many days of signing up.
+  activation_window_days: 30
+  # A question is "answered fast" if another user answers within this many hours.
+  fast_answer_hours: 24
+  # Votes count as early feedback if cast within this many days of the post.
+  early_feedback_days: 7
+  # The first-experience analysis uses newcomers from this many recent years (with full follow-up).
+  experience_window_years: 3
+
+models:
+  community_retention:
+    staging:
+      +schema: staging
+      +materialized: view
+    intermediate:
+      +schema: intermediate
+      +materialized: view
+    marts:
+      +schema: marts
+      +materialized: table

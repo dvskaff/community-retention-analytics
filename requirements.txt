@@ -1,0 +1,11 @@
+dbt-core==1.12.6
+dbt-duckdb==1.11.1
+duckdb==2.0.0
+pandas==3.1.0
+numpy==2.5.4
+pyarrow==26.0.1
+requests==2.34.2
+py7zr==1.1.4
+lifelines==0.30.3
+scipy==1.18.1
+plotly==7.1.0

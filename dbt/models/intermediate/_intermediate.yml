@@ -1,0 +1,48 @@
+version: 2
+
+models:
+  - name: int_contributions
+    description: One row per question, answer or comment by a registered user.
+    columns:
+      - {name: contribution_key, data_tests: [unique, not_null]}
+      - {name: user_id, data_tests: [not_null]}
+      - name: contribution_type
+        data_tests: [{accepted_values: {arguments: {values: [question, answer, comment]}}}]
+  - name: int_post_feedback
+    columns:
+      - {name: post_id, data_tests: [unique, not_null]}
+  - name: int_question_outcomes
+    columns:
+      - {name: question_id, data_tests: [unique, not_null]}
+      - {name: hours_to_first_answer, data_tests: [not_negative]}
+  - name: int_user_firsts
+    description: First contribution, next visit and first-experience signals per contributor.
+    columns:
+      - {name: user_id, data_tests: [unique, not_null]}
+
+unit_tests:
+  - name: next_visit_ignores_same_day_activity
+    description: >
+      A newcomer who posts three times on day one and returns on day 12 has their next visit on day 12; a user who
+      only posts on their first day has no next visit.
+    model: int_user_firsts
+    given:
+      - input: ref('int_contributions')
+        rows:
+          - {contribution_key: "q1", user_id: 1, contribution_type: question, post_id: 1, created_at: "2024-01-01 09:00:00"}
+          - {contribution_key: "c1", user_id: 1, contribution_type: comment, post_id: 1, created_at: "2024-01-01 10:00:00"}
+          - {contribution_key: "c2", user_id: 1, contribution_type: comment, post_id: 1, created_at: "2024-01-01 23:00:00"}
+          - {contribution_key: "a5", user_id: 1, contribution_type: answer, post_id: 5, created_at: "2024-01-12 08:00:00"}
+          - {contribution_key: "q9", user_id: 2, contribution_type: question, post_id: 9, created_at: "2024-02-01 08:00:00"}
+      - input: ref('int_question_outcomes')
+        rows:
+          - {question_id: 1, answered_fast: true, commented_fast: true, upvotes_early: 0, downvotes_early: 1, closed_within_7d: false}
+          - {question_id: 9, answered_fast: false, commented_fast: false, upvotes_early: 2, downvotes_early: 0, closed_within_7d: true}
+      - input: ref('int_post_feedback')
+        rows: []
+      - input: ref('stg_se__posts')
+        rows: []
+    expect:
+      rows:
+        - {user_id: 1, first_type: question, next_at: "2024-01-12 08:00:00", contributions: 4, active_days: 2, first_q_answered_fast: true, first_q_upvoted_early: false, first_q_downvoted_early: true, first_q_closed_7d: false}
+        - {user_id: 2, first_type: question, next_at: null, contributions: 1, active_days: 1, first_q_answered_fast: false, first_q_upvoted_early: true, first_q_downvoted_early: false, first_q_closed_7d: true}

@@ -1,0 +1,37 @@
+version: 2
+
+models:
+  - name: stg_se__users
+    columns:
+      - {name: user_id, data_tests: [unique, not_null]}
+      - {name: signed_up_at, data_tests: [not_null]}
+  - name: stg_se__posts
+    columns:
+      - {name: post_id, data_tests: [unique, not_null]}
+      - name: post_type
+        data_tests:
+          - accepted_values: {arguments: {values: [question, answer, other]}}
+      - name: parent_question_id
+        description: For answers, the question they answer.
+  - name: stg_se__comments
+    columns:
+      - {name: comment_id, data_tests: [unique, not_null]}
+  - name: stg_se__votes
+    columns:
+      - {name: vote_id, data_tests: [unique, not_null]}
+
+unit_tests:
+  - name: stg_posts_parses_both_tag_formats_and_drops_system_owner
+    description: Old dumps write tags as <a><b>, new ones as |a|b|; the Community account (-1) is not a real owner.
+    model: stg_se__posts
+    given:
+      - input: source('stackexchange', 'posts')
+        rows:
+          - {Id: "1", PostTypeId: "1", OwnerUserId: "7", CreationDate: "2012-01-01T10:00:00.000", Tags: "<regression><r>"}
+          - {Id: "2", PostTypeId: "1", OwnerUserId: "-1", CreationDate: "2024-01-01T10:00:00.000", Tags: "|bayesian|mcmc|"}
+          - {Id: "3", PostTypeId: "2", ParentId: "1", OwnerUserId: null, CreationDate: "2012-01-02T10:00:00.000", Tags: null}
+    expect:
+      rows:
+        - {post_id: 1, post_type: question, owner_user_id: 7, primary_tag: regression}
+        - {post_id: 2, post_type: question, owner_user_id: null, primary_tag: bayesian}
+        - {post_id: 3, post_type: answer, owner_user_id: null, primary_tag: null}
