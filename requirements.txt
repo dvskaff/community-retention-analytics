@@ -1,7 +1,7 @@
 dbt-core==1.12.6
 dbt-duckdb==1.11.1
 duckdb==2.0.0
-pandas==3.1.0
+pandas==2.3.3  # lifelines 0.30 does not support pandas 3 yet
 numpy==2.5.4
 pyarrow==26.0.1
 requests==2.34.2
